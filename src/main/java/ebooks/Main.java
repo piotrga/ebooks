@@ -1,40 +1,55 @@
 package ebooks;
 
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.net.MalformedURLException;
+import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class Main extends javax.servlet.http.HttpServlet {
-    protected void doPost(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response) throws javax.servlet.ServletException, IOException {
+    private BookStore bookStore = new BookStore();
+    private String googleCheckoutAPIUrl = "http://localhost:8080/rediectme?";
 
+    protected void doPost(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response) throws javax.servlet.ServletException, IOException {
+        System.out.println("Request: "+ request.getQueryString());
+        response.sendRedirect("http://localhost:8080/redirectedTo");
     }
 
     protected void doGet(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response) throws javax.servlet.ServletException, IOException {
         String url = request.getRequestURI();
+
         if (url.matches("/buy/[1-9]+")){
-            Pattern pattern = Pattern.compile("/buy/([1-9]+)");
-            buy(Integer.valueOf(pattern.matcher(url).group(1)));
-        };
+            Matcher matcher = matcher(url, "/buy/([1-9]+)");
+            buy(BookId.Of(matcher.group(1)), response);
+        }
     }
 
-    private void buy(Integer bookId) {
+    private Matcher matcher(String url, String regex) {
+        Pattern buyPattern = Pattern.compile(regex);
+        Matcher matcher = buyPattern.matcher(url);
+        matcher.matches();
+        return matcher;
+    }
+
+    private void buy(BookId bookId, HttpServletResponse response) {
+        Book book = bookStore.find(bookId);
         try {
-            URL url = new URL("_type=checkout-shopping-cart" +
-                    "&item_name_1=Super%20Software%205000" +
-                    "&item_description_1=Improves%20download%20speeds!" +
-                    "&item_price_1=1.00" +
-                    "&item_currency_1=GBP" +
-                    "&item_quantity_1=1\n" +
-                    "&shopping-cart.items.item-1.digital-content.display-disposition=OPTIMISTIC\n" +
-                    "&shopping-cart.items.item-1.digital-content.description=Please%20go%20to%20&lt;a%20href=&quot;http://supersoft.example.com&quot;&gt;our%20website&lt;/a&gt;,\n" +
-                    "%20%20and%20enter%20your%20access%20key%20so%20that%20you%20can%20download%20our%20software.\n" +
-                    "&shopping-cart.items.item-1.digital-content.key=1456-1514-3657-2198\n" +
-                    "&shopping-cart.items.item-1.digital-content.url=http://supersoft.example.com\n" +
-                    "&_charset_");
-            url.
-        } catch (MalformedURLException e) {
-            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            URL url = new URL(googleCheckoutAPIUrl + book.toBuyNowQueryString() );
+            URL redirect = postExpectedRedirect(url);
+            response.sendRedirect(redirect.toExternalForm());
+        } catch (Exception e) {
+            throw new RuntimeException("Can not redirect to google checkout", e);
         }
+    }
+
+    private URL postExpectedRedirect(URL url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setRequestMethod("POST");
+        connection.connect();
+        System.out.println("Response code: " + connection.getResponseCode());
+        if (connection.getResponseCode() != 302) throw new RuntimeException("Expected redirect but server returned "+connection.toString());
+        return new URL(connection.getHeaderField("Location"));
     }
 }
